@@ -171,6 +171,8 @@ class BaseRESTView(HTTPEndpoint):
         # do the await out here in async function. need to compensate since we don't know
         # if there is a body (depending on the specific endpoint)
         body = await request.body()
+        print("AAAAAAAA body : ")
+        print(body)
         if body:
             payload = json.loads(body)
         else:

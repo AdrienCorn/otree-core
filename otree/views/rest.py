@@ -1,4 +1,8 @@
 import json
+import datetime
+import csv
+import json
+from io import StringIO
 
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
@@ -7,11 +11,14 @@ import otree
 import otree.bots.browser
 import otree.views.cbv
 from otree import settings
+from otree.common import get_main_module
 from otree.channels import utils as channel_utils
+from otree.lookup import get_page_lookup
 from otree.common import GlobalState, get_main_module
 from otree.currency import json_dumps
 from otree.database import db, dbq
-from otree.models import Session, Participant
+from otree.export import BOM, get_installed_apps_with_data
+from otree.models import Session, Participant, BasePlayer
 from otree.models_concrete import ParticipantVarsFromREST
 from otree.room import ROOM_DICT
 from otree.session import create_session, SESSION_CONFIGS_DICT, CreateSessionInvalidArgs
@@ -19,11 +26,106 @@ from otree.templating import ibis_loader
 from .cbv import BaseRESTView
 
 
+def inspect_field_names(Model):
+    return [f.name for f in Model.__table__.columns]
+
+def _get_table_fields(Model, for_export=False):
+
+    if Model is Session:
+        # only data export
+        return [
+            'code',
+            'label',
+            'mturk_HITId',
+            'mturk_HITGroupId',
+            'comment',
+            'is_demo',
+        ]
+
+    if Model is Participant:
+        if for_export:
+            return [
+                'id_in_session',
+                'code',
+                'label',
+                '_is_bot',
+                '_index_in_pages',
+                '_max_page_index',
+                '_current_app_name',
+                # this could be confusing because it will be in every row,
+                # even rows for different rounds.
+                #'_round_number',
+                '_current_page_name',
+                'time_started_utc',
+                'visited',
+                'mturk_worker_id',
+                'mturk_assignment_id',
+                # last so that it will be next to payoff_plus_participation_fee
+                'payoff',
+            ]
+        else:
+            return [
+                '_numeric_label',
+                'code',
+                'label',
+                '_current_page',
+                '_current_app_name',
+                '_round_number',
+                '_current_page_name',
+                '_monitor_note',
+                '_last_page_timestamp',
+            ]
+
+    if issubclass(Model, BasePlayer):
+        subclass_fields = [
+            f for f in inspect_field_names(Model) if f not in dir(BasePlayer)
+        ]
+        print(subclass_fields[1])
+        fields = ['id_in_group', 'role', 'payoff'] + subclass_fields
+        if for_export:
+            return fields
+        return ['group'] + fields
+
+    if issubclass(Model, BaseGroup):
+        subclass_fields = [
+            f for f in inspect_field_names(Model) if f not in dir(BaseGroup)
+        ]
+        return ['id_in_subsession'] + subclass_fields
+
+    if issubclass(Model, BaseSubsession):
+        subclass_fields = [
+            f for f in inspect_field_names(Model) if f not in dir(BaseGroup)
+        ]
+        if for_export:
+            return ['round_number'] + subclass_fields
+        return subclass_fields
+
 class RESTOTreeVersion(BaseRESTView):
     url_pattern = '/api/otree_version'
 
     def get(self):
         return JSONResponse(dict(version=otree.__version__))
+    
+def get_json_http_response(buffer: StringIO, filename_prefix) -> Response:
+    buffer.seek(0)
+    response = Response(buffer.read())
+    date = datetime.date.today().isoformat()
+    response.headers['Content-Type'] = 'text/json'
+    response.headers[
+        'Content-Disposition'
+    ] = f'attachment; filename="{filename_prefix}-{date}.json"'
+    return response
+
+class RESTSessionDatas(BaseRESTView):
+    url_pattern = '/api/session_datas/{code}'
+
+    def get(self):
+        code = self.request.path_params['code']
+        buf = StringIO()
+        if bool(self.request.query_params.get('excel')):
+            buf.write(BOM)
+        otree.export.export_wide(buf, session_code=code)
+        return get_json_http_response(buf, 'all_apps_wide')
 
 
 class RESTSessionConfigs(BaseRESTView):
@@ -62,6 +164,55 @@ class RESTParticipantVars(BaseRESTView):
         participant.vars.update(vars)
         return JSONResponse({})
 
+class RESTPSurveyVars(BaseRESTView):
+
+    url_pattern = '/api/survey_vars/{code}'
+
+    def post(self, vars):
+        code = self.request.path_params['code']
+        participant = db.get_or_404(Participant, code=code)
+        print("before")
+
+        
+
+        
+
+        #lookup = get_page_lookup('tbmjrfo7', '1')
+        #player = models_module.Player.objects_get(
+        #    round_number=lookup.round_number, participant=participant
+        #)
+
+
+        models_module = get_main_module("my_survey")
+        for Model in [models_module.Player, models_module.Group, models_module.Subsession]:
+            if issubclass(Model, BasePlayer):
+                subclass_fields = [
+                    f for f in inspect_field_names(Model) if f not in dir(BasePlayer)
+                ]
+                print(subclass_fields[0])
+                table = _get_table_fields(Model, for_export=True)
+                print(table[3])
+            
+
+
+
+        print("after")
+        participant.vars.update(vars)
+        return JSONResponse({})
+
+class RESTPlayerVars(BaseRESTView):
+
+    url_pattern = '/api/player_vars/{session_code}/{participant_code}'
+
+    def post(self, vars):
+        session_code = self.request.path_params['session_code']
+        participant_code = self.request.path_params['participant_code']
+        print('session_code')
+        print(session_code)
+        print('participant_code')
+        print(participant_code)
+        participant = db.get_or_404(Participant, code=participant_code)
+        return JSONResponse({})
 
 class RESTParticipantVarsByRoom(BaseRESTView):
     """

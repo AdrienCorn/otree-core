@@ -259,6 +259,7 @@ class FormPageOrInGameWaitPage:
         self.player = self.PlayerClass.objects_get(
             participant=participant, round_number=lookup.round_number
         )
+
         self._subsession_pk = lookup.subsession_id
         self.round_number = lookup.round_number
         self._session_pk = lookup.session_pk

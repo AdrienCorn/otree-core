@@ -3,7 +3,7 @@ import datetime
 from io import StringIO
 
 from starlette.endpoints import HTTPEndpoint
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 import otree.common
 import otree.export
@@ -13,6 +13,7 @@ from otree.export import BOM, get_installed_apps_with_data
 from otree.models.participant import Participant
 from otree.models_concrete import ChatMessage
 from . import cbv
+from .cbv import BaseRESTView
 
 
 class Export(cbv.AdminView):
@@ -48,6 +49,16 @@ def get_csv_http_response(buffer: StringIO, filename_prefix) -> Response:
     ] = f'attachment; filename="{filename_prefix}-{date}.csv"'
     return response
 
+def get_json_http_response(buffer: StringIO, filename_prefix) -> Response:
+    buffer.seek(0)
+    response = Response(buffer.read())
+    date = datetime.date.today().isoformat()
+    response.headers['Content-Type'] = 'text/json'
+    response.headers[
+        'Content-Disposition'
+    ] = f'attachment; filename="{filename_prefix}-{date}.json"'
+    return response
+
 
 class ExportSessionWide(HTTPEndpoint):
     '''used by data page'''
@@ -59,14 +70,28 @@ class ExportSessionWide(HTTPEndpoint):
         # we can't use AUTH_LEVEL to guard this, since it should ideally
         # be available in demo mode. (so that the UI can be consistent,
         # and it's also a good feature to demo oTree)
-        if request.query_params.get('token') != otree.common.DATA_EXPORT_HASH:
-            return Response(status_code=400, content="Missing or incorrect auth token")
+        #if request.query_params.get('token') != otree.common.DATA_EXPORT_HASH:
+            #return Response(status_code=400, content="Missing or incorrect auth token")
+
         buf = StringIO()
         if bool(request.query_params.get('excel')):
             # BOM
             buf.write(BOM)
         otree.export.export_wide(buf, session_code=code)
         return get_csv_http_response(buf, 'all_apps_wide')
+
+
+class ExportTest(BaseRESTView):
+
+    url_pattern = '/ExportSessionData/{code}'
+
+    def get(self):
+        code = self.request.path_params['code']
+        buf = StringIO()
+        if bool(self.request.query_params.get('excel')):
+            buf.write(BOM)
+        otree.export.export_wide(buf, session_code=code)
+        return get_json_http_response(buf, 'all_apps_wide')
 
 
 class ExportPageTimes(HTTPEndpoint):

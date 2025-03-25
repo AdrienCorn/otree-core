@@ -96,7 +96,7 @@ def _get_table_fields(Model, for_export=False):
         subclass_fields = [
             f for f in inspect_field_names(Model) if f not in dir(BasePlayer)
         ]
-
+        print(subclass_fields[1])
         fields = ['id_in_group', 'role', 'payoff'] + subclass_fields
         if for_export:
             return fields
@@ -106,14 +106,12 @@ def _get_table_fields(Model, for_export=False):
         subclass_fields = [
             f for f in inspect_field_names(Model) if f not in dir(BaseGroup)
         ]
-
         return ['id_in_subsession'] + subclass_fields
 
     if issubclass(Model, BaseSubsession):
         subclass_fields = [
             f for f in inspect_field_names(Model) if f not in dir(BaseGroup)
         ]
-
         if for_export:
             return ['round_number'] + subclass_fields
         return subclass_fields
